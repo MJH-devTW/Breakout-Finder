@@ -1,0 +1,365 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © LonesomeTheBlue
+//整體翻亞當的條件式基於突破近期的區間高點 + 突破的那兩根必須要連續上漲(代表是有力道的突破 而不是晃呀晃的剛好突破)
+//@version=5
+indicator('翻亞當 Breakout Finder', '翻亞當', overlay=true, max_bars_back=500, max_lines_count=400)
+prd = input.int(defval=3, title='Period', minval=2)
+bo_len = input.int(defval=200, title='Max Breakout Length', minval=30, maxval=300)
+cwidthu = input.float(defval=1., title='Threshold Rate %', minval=1., maxval=10) / 100
+mintest = input.int(defval=1, title='Minimum Number of Tests', minval=1)
+bocolorup = input.color(defval=color.red, title='Breakout Colors', inline='bocol')
+bocolordown = input.color(defval=color.blue, title='', inline='bocol')
+lstyle = input.string(defval=line.style_solid, title='Line Style', options=[line.style_solid, line.style_dashed, line.style_dotted])
+show_bear_adam = input(title='Show bear Adam\'s area', defval=true)
+show_bull_adam = input(title='Show bull Adam\'s area', defval=true)
+//width
+lll = math.max(math.min(bar_index, 300), 1)
+float h_ = ta.highest(lll)
+float l_ = ta.lowest(lll)
+float chwidth = (h_ - l_) * cwidthu
+
+// check if PH/PL
+ph = ta.pivothigh(prd, prd)
+pl = ta.pivotlow(prd, prd)
+
+//keep Pivot Points and their locations in the arrays
+var phval = array.new_float(0)
+var phloc = array.new_int(0)
+var plval = array.new_float(0)
+var plloc = array.new_int(0)
+
+// keep PH/PL levels and locations
+if ph
+    array.unshift(phval, ph)
+    array.unshift(phloc, bar_index - prd)
+    if array.size(phval) > 1  // cleanup old ones
+        for x = array.size(phloc) - 1 to 1 by 1
+            if bar_index - array.get(phloc, x) > bo_len
+                array.pop(phloc)
+                array.pop(phval)
+
+if pl
+    array.unshift(plval, pl)
+    array.unshift(plloc, bar_index - prd)
+    if array.size(plval) > 1  // cleanup old ones
+        for x = array.size(plloc) - 1 to 1 by 1
+            if bar_index - array.get(plloc, x) > bo_len
+                array.pop(plloc)
+                array.pop(plval)
+
+// check bullish cup
+float bomax = na
+int bostart = bar_index
+num = 0
+hgst = ta.highest(prd)[1]
+if array.size(phval) >= mintest and close > open and close > hgst and close[1] > open[1]
+    bomax := array.get(phval, 0)
+    xx = 0
+    for x = 0 to array.size(phval) - 1 by 1
+        if array.get(phval, x) >= close
+            break
+        xx := x
+        bomax := math.max(bomax, array.get(phval, x))
+        bomax
+    if xx >= mintest and open <= bomax
+        for x = 0 to xx by 1
+            if array.get(phval, x) <= bomax and array.get(phval, x) >= bomax - chwidth
+                num += 1
+                bostart := array.get(phloc, x)
+                bostart
+        if num < mintest or hgst >= bomax
+            bomax := na
+            bomax
+
+if not na(bomax) and num >= mintest and show_bull_adam
+    line1 =line.new(x1=bar_index, y1=bomax, x2=bostart, y2=bomax, color=bocolorup, style=lstyle)
+    line2 =line.new(x1=bar_index, y1=bomax - chwidth, x2=bostart, y2=bomax - chwidth, color=bocolorup, style=lstyle)
+    line.new(x1=bostart, y1=bomax - chwidth, x2=bostart, y2=bomax, color=bocolorup, style=lstyle)
+    line.new(x1=bar_index, y1=bomax - chwidth, x2=bar_index, y2=bomax, color=bocolorup, style=lstyle)
+    linefill.new(line1,line2,color=color.new(bocolorup,80))
+plotshape(not na(bomax) and num >= mintest and show_bull_adam, location=location.belowbar, style=shape.triangleup, color=bocolorup, size=size.small)
+AdanUp =  ta.barssince(not na(bomax) and num >= mintest)     //紀錄上次出現多方亞當的K棒數
+alertcondition(not na(bomax) and num >= mintest and show_bull_adam, title='Breakout', message='Breakout')
+
+
+
+
+//Show bull Adam's area
+float l = na    //亞當推算滿足區
+if not na(bomax) and num >= mintest and show_bull_adam and close[1] > open[1]
+    a = array.new_float(0)
+    for i = 0 to bar_index - bostart by 1
+        array.push(a, low[i])
+    l := (array.min(a) - open[0]) * -1 + close[0]
+    line.new(bar_index + bar_index - bostart, l, bar_index, l, color=color.purple, style=line.style_dashed)
+
+    //line.new(bar_index+5, l , bar_index , l, color = color.purple, style = line.style_dashed)
+
+p1 = plot(show_bull_adam and not na(bomax) ? bomax : na, color=color.new(color.red, 100))
+p2 = plot(show_bull_adam and not na(l) ? l : na, color=color.new(color.red, 100))
+fill(p1, p2, color=color.new(color.red, 70), title='bull zone')
+
+
+// check bearish cup---------------------------------------------------------------------------
+float bomin = na
+bostart := bar_index
+num1 = 0
+lwst = ta.lowest(prd)[1]
+if array.size(plval) >= mintest and close < open and close < lwst and close[1] < open[1]
+    bomin := array.get(plval, 0)
+    xx = 0
+    for x = 0 to array.size(plval) - 1 by 1
+        if array.get(plval, x) <= close
+            break
+        xx := x
+        bomin := math.min(bomin, array.get(plval, x))
+        bomin
+    if xx >= mintest and open >= bomin
+        for x = 0 to xx by 1
+            if array.get(plval, x) >= bomin and array.get(plval, x) <= bomin + chwidth
+                num1 += 1
+                bostart := array.get(plloc, x)
+                bostart
+        if num1 < mintest or lwst <= bomin
+            bomin := na
+            bomin
+
+if not na(bomin) and num1 >= mintest and show_bear_adam
+    line1 =line.new(x1=bar_index, y1=bomin, x2=bostart, y2=bomin, color=bocolordown, style=lstyle)
+    line2 =line.new(x1=bar_index, y1=bomin + chwidth, x2=bostart, y2=bomin + chwidth, color=bocolordown, style=lstyle)
+    line.new(x1=bostart, y1=bomin + chwidth, x2=bostart, y2=bomin, color=bocolordown, style=lstyle)
+    line.new(x1=bar_index, y1=bomin + chwidth, x2=bar_index, y2=bomin, color=bocolordown, style=lstyle)
+    linefill.new(line1,line2,color=color.new(bocolordown,80))
+    //BreaklineBear := bomin+ chwidth
+plotshape(not na(bomin) and num1 >= mintest and show_bear_adam, location=location.abovebar, style=shape.triangledown, color=bocolordown, size=size.small)
+AdanDown =  ta.barssince(not na(bomin) and num1 >= mintest and show_bear_adam)     //紀錄上次出現空方亞當的K棒數
+
+//Show bear Adam's area
+float h = na    //亞當推算滿足區
+if not na(bomin) and num1 >= mintest and show_bear_adam and close[1] < open[1]
+    a = array.new_float(0)
+    for i = 0 to bar_index - bostart by 1
+        array.push(a, high[i])
+    h := (array.max(a) - open[0]) * -1 + close[0]
+    //line.new(bar_index+5, h , bar_index , h, color = color.blue, style = line.style_dashed)
+    line.new(bar_index + bar_index - bostart, h, bar_index, h, color=color.blue, style=line.style_dashed)
+
+
+
+
+p3 = plot(show_bear_adam and not na(bomin) ? bomin : na, color=color.new(color.blue, 100))
+p4 = plot(show_bear_adam and not na(h) ? h : na, color=color.new(color.blue, 100))
+fill(p3, p4, color=color.new(color.blue, 70), title='bear zone')
+
+
+alertcondition(not na(bomin) and num1 >= mintest, title='Breakdown', message='Breakdown')
+alertcondition(not na(bomax) and num >= mintest or not na(bomin) and num1 >= mintest, title='Breakout or Breakdown', message='Breakout or Breakdown')
+
+
+ZigZagLine = input.bool(false,"------繪製走勢------")
+RevAdam = input.bool(true,"------應該發生卻沒發生(關鍵區域翻亞當失敗)------")
+
+//upTrendBarColor = input.color(color.green)
+//downTrendBarColor = input.color(color.red)
+//Depth       = input.int(21, "Depth", minval=1, step=1)
+//Deviation   = input.int(5, "Deviation", minval=1, step=1)
+//Backstep    = input.int(2, "Backstep", minval=2, step=1)
+//line_thick  = input.int(2, "Line Thickness", minval=1, maxval=4)
+//upcolor     = input(color.new(color.lime,50), "Bull Color")
+//dncolor     = input(color.new(color.red ,50), "Bear Color")
+//repaint     = input(true, "Repaint Levels")
+
+
+
+upTrendBarColor = color(color.green)
+downTrendBarColor = color(color.red)
+
+Depth       = 21 //ZigZag "Depth"
+Deviation   = 5  //ZigZag "Deviation"
+Backstep    = 2  //ZigZag "Backstep"
+line_thick  = 2  //ZigZag "Line Thickness"
+upcolor     = color.new(color.lime,50)  //ZigZag 文字框顏色UP
+dncolor     = color.new(color.red ,50)  //ZigZag 文字框顏色DN
+repaint     = input(true, "Repaint Levels")
+
+
+//////// 
+// Bake
+// [
+var last_h = 1, last_h := last_h + 1
+var last_l = 1, last_l := last_l + 1
+var lw = 1, var hg = 1
+lw := lw + 1, hg := hg + 1
+p_lw = -ta.lowestbars(Depth), p_hg = -ta.highestbars(Depth)
+lowing = lw == p_lw or low - low[p_lw] > Deviation*syminfo.mintick
+highing = hg == p_hg or high[p_hg] - high > Deviation*syminfo.mintick
+lh = ta.barssince(not highing[1]), ll = ta.barssince(not lowing[1])
+down = ta.barssince(not (lh > ll)) >= Backstep, lower = low[lw] > low[p_lw], higher = high[hg] < high[p_hg]
+if lw != p_lw and (not down[1] or lower)
+    lw := p_lw < hg ? p_lw : 0
+if hg != p_hg and (down[1] or higher)
+    hg := p_hg < lw ? p_hg : 0
+
+line zz = na
+label point = na
+x1 = down ? lw : hg
+y1 = down ? low[lw] : high[hg]
+
+if down == down[1]
+    if repaint
+        label.delete(point[1])
+        line.delete(zz[1])
+    down
+if down != down[1] 
+    if down
+        last_h := hg
+    else
+        last_l := lw
+    if not repaint and ZigZagLine
+        nx = down?last_h:last_l
+        zz := line.new(bar_index-nx, down ? high[nx] : low[nx], bar_index-(down?last_l:last_h), down ? low[last_l] : high[last_h], width=line_thick, color=down?upcolor:dncolor)
+        point := label.new(bar_index-nx, down ? high[nx] : low[nx], down ? (high[nx] > high[last_h[1]]?"HH":"LH") : (low[nx] < low[last_l[1]] ? "LL" : "HL"), style=down?label.style_label_down:label.style_label_up, size=size.tiny, color=down?dncolor:upcolor, textcolor=color.black, tooltip = down ? (high[nx] > high[last_h[1]]?"Higher High":"Lower High") : (low[nx] < low[last_l[1]] ? "Lower Low" : "Higher Low"))
+    down
+if repaint and ZigZagLine
+    zz := line.new(bar_index-(down?last_h:last_l), down ? high[last_h] : low[last_l], bar_index-x1, y1, width=line_thick, color=down?dncolor:upcolor)
+    point := label.new(bar_index-x1, y1, down ? (low[x1] < low[last_l] ? "LL" : "HL") : (high[x1] > high[last_h]?"HH":"LH"), style=down?label.style_label_up:label.style_label_down, size=size.tiny, color=down?upcolor:dncolor, textcolor=color.black, tooltip = down ? (low[x1] < low[last_l] ? "Lower Low" : "Higher Low") : (high[x1] > high[last_h]?"Higher High":"Lower High"))
+// ]
+
+
+////////
+// Let it Cool And Serve
+bear = down
+// bgcolor(bear?color.red:color.lime, title="Scanning Direction")
+
+var highPivots = array.new_float(0)
+var lowPivots = array.new_float(0)
+// var hhPivots = array.new_float(0)
+// var hlPivots = array.new_float(0)
+// var lhPivots = array.new_float(0)
+// var llPivots = array.new_float(0)
+var curHigherHigh = 0.0
+var curHigherLow = 0.0
+var curLowerHigh = 0.0
+var curLowerLow = 0.0
+var trend = 0
+
+// store valid pivots in the array
+// if (not na(ph))
+//     array.push(highPivots, ph)
+msb = false
+trendChange = false
+
+if (trend == 0)
+    if close > open
+        trend := 1
+        curHigherHigh := high
+        curHigherLow := low
+    else
+        trend := -1
+        curLowerLow := low
+        curLowerHigh := high
+else if (trend == 1)
+    if high[hg] > curHigherHigh
+        curHigherHigh := high[hg]
+        curHigherLow := low[last_l]
+    else if low < curHigherLow
+        curLowerLow := low
+        msb := true
+        trend := -1
+        trendChange := true
+if (trend == -1 and trend[1] == -1)
+    if low[lw] < curLowerLow
+        curLowerLow := low[lw]
+        curLowerHigh := high[last_h]
+    else if (high > curLowerHigh)
+        curHigherHigh := high
+        msb := true
+        trend := 1
+        trendChange := true
+
+// if (not na(pl))
+//     array.push(lowPivots, pl)
+
+//colorBars = input(false)
+//colorBars = false
+//barcolor(colorBars ? (trend == 1 ? upTrendBarColor : downTrendBarColor) : na)
+highPrice = trend == 1 ? curHigherHigh : curLowerHigh
+// highLine = line.new(bar_index-10, highPrice, bar_index, highPrice, color=color.blue)
+// lowPrice = trend =÷= 1 ? curHigherLow :  curLowerLow
+// lowLine = hline(lowPrice, "Low", color.blue)
+
+// chh15 = request.security(syminfo.tickerid, '15', curHigherHigh)
+// if (trendChange)
+//     if (trend == 1)
+//         strategy.close('Short')
+//         strategy.entry('Long', strategy.long)
+//     else if (trend == -1)
+//         strategy.close('Long')
+//         strategy.entry('Short', strategy.short)
+if (trendChange)
+    alert("MSB/BOS")
+//plotshape(trendChange and trend == 1, "BOS", shape.circle, location.abovebar, color.lime, size=size.small)
+//plotshape(trendChange and trend == -1, "BOS", shape.circle, location.belowbar, color.red, size=size.small)
+  
+float BreaklineBull =na    //前高 (突破近期的區間高點)
+float BreaklineBear =na    //前低 (突破近期的區間低點)
+BreaklineBull := (close[AdanUp] + open[AdanUp])/2
+var DoesItBreakBull = 0
+if((AdanUp == 1) and BreaklineBull > close[0])  
+    DoesItBreakBull:= 1
+else if((AdanUp == 2) and BreaklineBull > close[1])  
+    DoesItBreakBull:= 2
+else if((AdanUp == 3) and (BreaklineBull > close[2] or BreaklineBull > close[1] ))  
+    DoesItBreakBull:= 3    
+else
+    DoesItBreakBull:= 0
+
+
+BreaklineBear := (close[AdanDown] + open[AdanDown])/2
+var DoesItBreakBear = 0
+if((AdanDown == 1) and BreaklineBear > close[0])  
+    DoesItBreakBear:= 1
+else if((AdanDown == 2) and BreaklineBear > close[1])  
+    DoesItBreakBear:= 2
+else if((AdanDown == 3) and (BreaklineBear > close[2] or BreaklineBear > close[1] ))  
+    DoesItBreakBear:= 3    
+else
+    DoesItBreakBear:= 0
+
+showDebug = input(false)
+printTable(txt) => var table t = table.new(position.middle_right, 1, 1), table.cell(t, 0, 0, txt, bgcolor = color.yellow)
+if (showDebug)
+    printTable("last_h: " + str.tostring(last_h) + "\n" + 
+         "last_l: " + str.tostring(last_l) + "\n" + 
+         "lw:" + str.tostring(lw) + "\n" + 
+         "hg: " + str.tostring(hg) + "\n" +
+         "p_lw: " + str.tostring(p_lw) + "\n" +
+         "trend" + str.tostring(trend) + "\n" + 
+         "cHH: " + str.tostring(curHigherHigh) + "\n" +
+        //  "cHH 15: " + str.tostring(chh15) + "\n" +
+         "cHL: " + str.tostring(curHigherLow) + "\n" +
+         "curLowerHigh: " + str.tostring(curLowerHigh) + "\n" +
+         "cLL: " + str.tostring(curLowerLow) + "\n" +
+         "AdanUp: " + str.tostring(AdanUp) + "\n" +
+         "AdanDown: " + str.tostring(AdanDown) + "\n" +
+         "BreaklineBull: " + str.tostring(BreaklineBull) + "\n" +
+         "BreaklineBull > close[1]: " + str.tostring(BreaklineBull > close[1]) + "\n" +
+         "BreaklineBull > close[2]: " + str.tostring(BreaklineBull > close[2]) + "\n" +
+         "bomax: " + str.tostring(bomax) + "\n"  +
+         "num: " + str.tostring(num) + "\n"  +
+         "mintest: " + str.tostring(mintest) + "\n"+
+         "close[1]: " + str.tostring(close[1]) + "\n"+
+         "close[2]: " + str.tostring(close[2]) + "\n"+
+         "DoesItBreakBull: " + str.tostring(DoesItBreakBull) + "\n"+
+         "ta.highest(prd)[1]: " + str.tostring(ta.highest(prd)[2]) + "\n" ) 
+         
+
+
+
+
+//應該要多 卻沒有多 所以可能是反轉
+AdamReverseNotBull = (hg < 3) and (hg > 0) and (AdanUp < 3) and (AdanUp > 0) and (DoesItBreakBull>0)     //Z一段時間高點3跟內 + 剛突破新高 + 連續2根不能收破框框區   
+plotshape(AdamReverseNotBull and RevAdam, location=location.abovebar, style=shape.labeldown, color=color.rgb(87, 58, 141), size=size.normal)
+
+AdamReverseNotBear = (lw < 3) and (lw > 0) and (AdanDown < 3) and (AdanDown > 0) and (DoesItBreakBear>0)     //Z一段時間低點3跟內 + 剛突破新低 + 連續2根不能收破框框區   
+plotshape(AdamReverseNotBear and RevAdam, location=location.belowbar, style=shape.labelup, color=color.rgb(216, 75, 146), size=size.normal)
